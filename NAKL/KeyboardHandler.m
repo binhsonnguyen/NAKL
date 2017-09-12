@@ -26,6 +26,10 @@
 
 #define chr_A   'A'
 #define chr_a   'a'
+#define chr_E   'E'
+#define chr_e   'e'
+#define chr_Y   'Y'
+#define chr_y   'y'
 #define chr_D   'D'
 #define chr_d   'd'
 #define chr_U   'U'
@@ -151,17 +155,46 @@ bool hasSpaceBar = false;
 - (void) mapToCharset :(UniChar *)w :(int)count
 {
     UniChar *s;
+    char adjust = 0;
     for( s = _kbBuffer+BACKSPACE_BUFFER, pw = w; count>0; count--, w++ ) {
+        switch (w-word){
+            case 2:
+                if (*(w-2)=='q')
+                    break;
+              // thuo7 -> thuơ
+//            case 3:
+//                if (*(w-3)=='t' && *(w-2)=='h')
+//                    break;
+            default:
+                // uơ -> ươ, uớ -> ướ, uờ -> ườ...
+                ////////////////////////////////
+                if (w>word && *(w-1)==utf_u && (*w==utf_o7 ||*w==utf_o71 ||*w==utf_o72 ||*w==utf_o73 ||*w==utf_o74 ||*w==utf_o75 )){
+                    adjust = 1;
+                    *s++ = '\b';
+                    *s++ = utf_u7;
+                    count++;
+                }
+                // capital key
+                if (w>word && *(w-1)==utf_U && (*w==utf_O7 ||*w==utf_O71 ||*w==utf_O72 ||*w==utf_O73 ||*w==utf_O74 ||*w==utf_O75 )){
+                    adjust = 1;
+                    *s++ = '\b';
+                    *s++ = utf_U7;
+                    count++;
+                }
+                break;
+        }
         *s++ = *w;
     }
     *s = 0;
     
-    self.kbBLength = s - _kbBuffer - BACKSPACE_BUFFER;
+    self.kbBLength = s - _kbBuffer - BACKSPACE_BUFFER - adjust;
 }
 
 - (int) uiGroup: (ushort) u
 {
     static ushort UI[] = {
+        utf_O,  utf_O1,  utf_O2,  utf_O3,  utf_O4,  utf_O5,
+        utf_o,  utf_o1,  utf_o2,  utf_o3,  utf_o4,  utf_o5,
         utf_U,  utf_U1,  utf_U2,  utf_U3,  utf_U4,  utf_U5,
         utf_u,  utf_u1,  utf_u2,  utf_u3,  utf_u4,  utf_u5,
         utf_U7, utf_U71, utf_U72, utf_U73, utf_U74, utf_U75,
@@ -253,17 +286,19 @@ bool hasSpaceBar = false;
 - (void) append :(ushort)lastkey :(UniChar)key
 {
     static char *spchk = "AIUEOYaiueoy|BDFJKLQSVWXZbdfjklqsvwxz|'`~?.^*+=";
+                        // -                                -  -     -                 -
+                        // ià ùa òa ái ùi ói àu íu éu iê uê oè yê ào uố èo ấy úy ưu    ió
     static char *vwchk = "|ia|ua|oa|ai|ui|oi|au|iu|eu|ie|ue|oe|ye|ao|uo|eo|ay|uy|uu|ou|io|";
     char *sp = strchr(spchk, (char) key);
     int kp = sp ? (sp - spchk) : -1;
     
     if( !count ) {
-        if( kp>=0 && kp<12 ) {
+        if( kp>=0 && kp<12 ) { // AIUEOYaiueoy
             vpc = 1;
             vps[vp = 0] = -1;
             lvs[0] = key;
         } else {
-            if( kp==12 || kp>37 ) {
+            if( kp==12 || kp>37 ) { // |'`~?.^*+=
                 return;
             } else {
                 vp = -1;
@@ -272,12 +307,12 @@ bool hasSpaceBar = false;
         }
     }
     else {
-        if( kp==12 || kp>37 ) {
+        if( kp==12 || kp>37 ) { // |'`~?.^*+=
             [self clearBuffer];
             return;
         }
         else
-            if( kp>12 ) // b, d, f,...
+            if( kp>12 ) // BDFJKLQSVWXZbdfjklqsvwxz
                 tempoff = count;
             else
                 if( kp>=0 ) { // vowels
@@ -452,14 +487,27 @@ bool hasSpaceBar = false;
                                    (j > 24 && word[i-2] != chr_g && word[i-2] != chr_G)
                                    )
                                   )
-                     ) && [self isValidModifier:word[i-1]:key] )
-                    i = i - 1;
+                     ) && [self isValidModifier:word[i-1]:key] && 1)
+                {
+                    char *m = modifierKeys[self.kbMethod - 1];
+                    if ((char*) strchr(m, key)-m != 8 || j>=12) //Works with Telex+VNI
+                        i -=1 ;
+                }
                 break;
             case chr_u:
             case chr_U:
                 if( i-2 < 0 ||  (word[i-2] != chr_g && word[i-2] != chr_G) )
-                    i = i - 1;
+                    i -=1 ;
                 break;
+            case chr_e:
+            case chr_E:
+                i -=1 ;
+                break;
+            case chr_y:
+            case chr_Y:
+                i -=1 ;
+                break;
+            
         }
     }
     
@@ -475,15 +523,23 @@ bool hasSpaceBar = false;
     
     for( i = 0; (cc = v[i].c) != 0 && c != cc; i++ );
     
-    if( !cc ) {
+    if( !cc && !((( c==utf_i || c==utf_I || c==utf_u || c==utf_U) && (word[p+1]==chr_e || word[p+1]==chr_E)) )
+       ) {
         [self append:c:key];
         return -1;
     }
     
     kbPLength = count - p;
-    if( !v[i].r2 ) {
+    if( !v[i].r2 )  {
+        if (!(( c==utf_i || c==utf_I || c==utf_u || c==utf_U ) && (word[p+1]==chr_e || word[p+1]==chr_E)) ) {
         word[ p ] = v[i].r1;
         backup[ p ] = c;
+        }
+        else {
+            if (key == utf_e || key == utf_E){ //Only works with Telex
+                word[p+1]= utf_e6;
+            }
+        }
     } else {
         word[ tempoff = count++ ] = (ushort)key;
         word[ p ] = backup[ p ];
